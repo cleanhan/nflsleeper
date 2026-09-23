@@ -22,7 +22,10 @@ import {
   Dice5,
   Scale,
   RefreshCw,
-  Copy
+  Copy,
+  Gem,
+  Bomb,
+  Target
 } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -123,12 +126,14 @@ export default function DashboardPage() {
 
   const [leagueInfo, setLeagueInfo] = useState({
     name: 'Loading...',
-    season: '2024',
+    season: '2026',
     currentWeek: 1,
-    totalRosters: 10
+    totalRosters: 14
   });
   const [teams, setTeams] = useState<TeamMetric[]>([]);
   const [matchups, setMatchups] = useState<MatchupItem[]>([]);
+  const [selectedWeek, setSelectedWeek] = useState(1);
+  const [allWeeksMatchupsMap, setAllWeeksMatchupsMap] = useState<Record<number, MatchupItem[]>>({});
   const [h2hMatrix, setH2hMatrix] = useState<Record<number, Record<number, { wins: number; losses: number; diff: number }>>>({});
   const [singleGameRecords, setSingleGameRecords] = useState<Array<{ week: number; roster_id: number; score: number }>>([]);
   const [selectedRadarRoster, setSelectedRadarRoster] = useState<number>(1);
@@ -167,6 +172,7 @@ export default function DashboardPage() {
       const rosters = await resRosters.json();
 
       const curWeek = lData.settings?.leg || lData.settings?.current_week || 1;
+      setSelectedWeek(curWeek);
 
       const mapped = rosters.map((r: any) => {
         const user = users.find((u: any) => u.user_id === r.owner_id) || {};
@@ -206,6 +212,7 @@ export default function DashboardPage() {
       const teamScoresMap: Record<number, number[]> = {};
       const newH2h: Record<number, Record<number, { wins: number; losses: number; diff: number }>> = {};
       const singleRecords: Array<{ week: number; roster_id: number; score: number }> = [];
+      const parsedWeeksMatchups: Record<number, MatchupItem[]> = {};
 
       mapped.forEach((t: TeamMetric) => {
         teamScoresMap[t.roster_id] = [];
@@ -216,8 +223,6 @@ export default function DashboardPage() {
           }
         });
       });
-
-      let currentWeekParsedMatchups: MatchupItem[] = [];
 
       weekResults.forEach(({ week, matchups: mList }) => {
         if (!Array.isArray(mList) || mList.length === 0) return;
@@ -259,47 +264,47 @@ export default function DashboardPage() {
           }
         });
 
-        if (week === curWeek) {
-          currentWeekParsedMatchups = Object.keys(groups).map(gId => {
-            const pair = groups[gId];
-            const p1 = pair[0];
-            const p2 = pair[1] || null;
+        const formattedWeekMatchups: MatchupItem[] = Object.keys(groups).map(gId => {
+          const pair = groups[gId];
+          const p1 = pair[0];
+          const p2 = pair[1] || null;
 
-            const formatTeam = (m: any) => {
-              const starterPtsSum = (m.starters_points || []).reduce((a: number, b: number) => a + (b || 0), 0);
-              const totalPtsSum = Object.values(m.players_points || {}).reduce((a: any, b: any) => a + (b || 0), 0) as number;
-              const benchScore = Math.max(0, totalPtsSum - starterPtsSum);
+          const formatTeam = (m: any) => {
+            const starterPtsSum = (m.starters_points || []).reduce((a: number, b: number) => a + (b || 0), 0);
+            const totalPtsSum = Object.values(m.players_points || {}).reduce((a: any, b: any) => a + (b || 0), 0) as number;
+            const benchScore = Math.max(0, totalPtsSum - starterPtsSum);
 
-              const playersList: MatchupPlayer[] = [];
-              if (m.starters && m.starters_points) {
-                m.starters.forEach((pId: string, idx: number) => {
-                  if (pId) {
-                    playersList.push({
-                      id: pId,
-                      name: resolvePlayerName(pId),
-                      pts: parseFloat((m.starters_points[idx] || 0).toFixed(1))
-                    });
-                  }
-                });
-              }
-              playersList.sort((a, b) => b.pts - a.pts);
-
-              return {
-                roster_id: m.roster_id,
-                score: parseFloat((m.points || starterPtsSum).toFixed(1)),
-                optimal: parseFloat((m.points + (benchScore * 0.25)).toFixed(1)),
-                bench_score: parseFloat(benchScore.toFixed(1)),
-                players: playersList
-              };
-            };
+            const playersList: MatchupPlayer[] = [];
+            if (m.starters && m.starters_points) {
+              m.starters.forEach((pId: string, idx: number) => {
+                if (pId) {
+                  playersList.push({
+                    id: pId,
+                    name: resolvePlayerName(pId),
+                    pts: parseFloat((m.starters_points[idx] || 0).toFixed(1))
+                  });
+                }
+              });
+            }
+            playersList.sort((a, b) => b.pts - a.pts);
 
             return {
-              matchup_id: gId,
-              teamA: formatTeam(p1),
-              teamB: p2 ? formatTeam(p2) : null
+              roster_id: m.roster_id,
+              score: parseFloat((m.points || starterPtsSum).toFixed(1)),
+              optimal: parseFloat((m.points + (benchScore * 0.25)).toFixed(1)),
+              bench_score: parseFloat(benchScore.toFixed(1)),
+              players: playersList
             };
-          });
-        }
+          };
+
+          return {
+            matchup_id: gId,
+            teamA: formatTeam(p1),
+            teamB: p2 ? formatTeam(p2) : null
+          };
+        });
+
+        parsedWeeksMatchups[week] = formattedWeekMatchups;
       });
 
       const numTeams = mapped.length;
@@ -328,12 +333,13 @@ export default function DashboardPage() {
 
       setLeagueInfo({
         name: lData.name || 'Fantasy League',
-        season: lData.season || '2024',
+        season: lData.season || '2026',
         currentWeek: curWeek,
         totalRosters: lData.total_rosters || mapped.length
       });
       setTeams(mapped);
-      setMatchups(currentWeekParsedMatchups);
+      setAllWeeksMatchupsMap(parsedWeeksMatchups);
+      setMatchups(parsedWeeksMatchups[curWeek] || []);
       setH2hMatrix(newH2h);
       setSingleGameRecords(singleRecords);
       if (mapped[0]) setSelectedRadarRoster(mapped[0].roster_id);
@@ -451,7 +457,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen flex flex-col font-sans bg-[#0c101a] text-slate-100 antialiased selection:bg-cyan-500 selection:text-white">
-      {/* Toast */}
       {toastMsg && (
         <div className="fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl bg-slate-900 text-white border border-slate-700 shadow-2xl flex items-center gap-2.5 text-sm animate-bounce">
           <Info className="w-4 h-4 text-cyan-400" />
@@ -599,7 +604,443 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Tab 2: AI Weekly Recap */}
+        {/* Tab 2: Matchups */}
+        {activeTab === 'matchups' && (
+          <div className="space-y-6">
+            <div className="glass-card p-4 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-white flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-cyan-400" /> 주차 선택:
+                </span>
+                <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 overflow-x-auto">
+                  {Array.from({ length: Math.max(1, leagueInfo.currentWeek) }, (_, i) => i + 1).map(w => (
+                    <button
+                      key={w}
+                      onClick={() => {
+                        setSelectedWeek(w);
+                        setMatchups(allWeeksMatchupsMap[w] || []);
+                      }}
+                      className={`px-3 py-1 rounded-md text-xs font-semibold transition ${
+                        selectedWeek === w
+                          ? 'bg-cyan-600 text-white shadow'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                      }`}
+                    >
+                      Week {w}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <span className="text-xs text-slate-400 font-medium">
+                * Week {selectedWeek} 실제 매치업 결과입니다.
+              </span>
+            </div>
+
+            {matchups.length === 0 ? (
+              <div className="glass-card rounded-2xl border border-slate-800 p-8 text-center text-slate-400">
+                <Swords className="w-8 h-8 mx-auto mb-2 text-slate-500" />
+                <p className="font-bold text-white text-base">Week {selectedWeek} 매치업 데이터가 아직 없습니다.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {matchups.map((m, idx) => {
+                  const teamAObj = teams.find(t => t.roster_id === m.teamA.roster_id);
+                  const teamBObj = m.teamB ? teams.find(t => t.roster_id === m.teamB.roster_id) : null;
+                  const aWon = teamBObj ? m.teamA.score > m.teamB.score : true;
+                  const diff = teamBObj ? Math.abs(m.teamA.score - m.teamB.score).toFixed(1) : '0.0';
+
+                  return (
+                    <div key={idx} className="glass-card rounded-2xl border border-slate-800 p-5 space-y-4 shadow-lg hover:border-slate-700 transition">
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+                        <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Swords className="w-3.5 h-3.5" /> 매치업 #{idx + 1}
+                        </span>
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${parseFloat(diff) < 5 ? 'bg-rose-950 text-rose-300 border border-rose-800 font-bold' : 'bg-slate-800 text-slate-300'}`}>
+                          {parseFloat(diff) < 5 ? `🚨 초접전 (${diff}점 차)` : `${diff}점 차`}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 items-center">
+                        <div>
+                          <p className="font-bold text-sm text-white truncate">{teamAObj?.name || `Team ${m.teamA.roster_id}`}</p>
+                          <p className="text-[11px] text-slate-400 truncate">@{teamAObj?.owner || ''}</p>
+                          <p className={`text-2xl font-black mt-1 ${aWon ? 'text-cyan-400' : 'text-slate-400'}`}>{m.teamA.score}</p>
+                          <p className="text-[11px] text-slate-400">최적: {m.teamA.optimal} (벤치 {m.teamA.bench_score}점)</p>
+                        </div>
+
+                        {teamBObj ? (
+                          <div className="text-right border-l border-slate-800 pl-4">
+                            <p className="font-bold text-sm text-white truncate">{teamBObj?.name}</p>
+                            <p className="text-[11px] text-slate-400 truncate">@{teamBObj?.owner || ''}</p>
+                            <p className={`text-2xl font-black mt-1 ${!aWon ? 'text-cyan-400' : 'text-slate-400'}`}>{m.teamB!.score}</p>
+                            <p className="text-[11px] text-slate-400">최적: {m.teamB!.optimal} (벤치 {m.teamB!.bench_score}점)</p>
+                          </div>
+                        ) : (
+                          <div className="text-slate-500 text-xs text-center">부전승(BYE)</div>
+                        )}
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-800/80 grid grid-cols-2 gap-3 text-[11px]">
+                        <div>
+                          <p className="font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                            <Trophy className="w-3 h-3 text-cyan-400" /> 주요 선발
+                          </p>
+                          <div className="space-y-1">
+                            {m.teamA.players.slice(0, 3).map(p => (
+                              <div key={p.id} className="flex justify-between items-center bg-slate-950/60 px-2 py-1 rounded border border-slate-800/60">
+                                <span className="truncate text-slate-300 max-w-[110px]">{p.name}</span>
+                                <span className="font-mono font-bold text-cyan-300">{p.pts}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {teamBObj && (
+                          <div className="border-l border-slate-800/80 pl-3">
+                            <p className="font-semibold text-slate-300 mb-1 flex items-center gap-1">
+                              <Trophy className="w-3 h-3 text-cyan-400" /> 주요 선발
+                            </p>
+                            <div className="space-y-1">
+                              {m.teamB!.players.slice(0, 3).map(p => (
+                                <div key={p.id} className="flex justify-between items-center bg-slate-950/60 px-2 py-1 rounded border border-slate-800/60">
+                                  <span className="truncate text-slate-300 max-w-[110px]">{p.name}</span>
+                                  <span className="font-mono font-bold text-cyan-300">{p.pts}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 3: Schedule Swap */}
+        {activeTab === 'scheduleSwap' && (
+          <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4 shadow-2xl">
+            <div>
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Shuffle className="w-5 h-5 text-purple-400" />
+                <span>🔮 "만약에..." 가상 일정 매트릭스 (Schedule Swap Matrix)</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                내 주간 득점 그대로 다른 멤버의 대진표를 완주했을 때의 가상 전적을 계산합니다.
+              </p>
+            </div>
+
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-900 border-b border-slate-800 text-slate-400 uppercase tracking-wider font-semibold">
+                    <th className="py-2.5 px-3 sticky left-0 bg-slate-900 z-10">내 팀 \ 빌려온 대진</th>
+                    {teams.map(t => (
+                      <th key={t.roster_id} className="py-2.5 px-2 text-center truncate max-w-[80px]">@{t.owner}</th>
+                    ))}
+                    <th className="py-2.5 px-3 text-center bg-slate-950 text-cyan-400">실제 전적</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 font-medium">
+                  {teams.map(myTeam => (
+                    <tr key={myTeam.roster_id}>
+                      <td className="py-2.5 px-3 sticky left-0 bg-slate-950 font-bold text-white z-10 whitespace-nowrap">
+                        {myTeam.name}
+                      </td>
+                      {teams.map(targetTeam => {
+                        if (myTeam.roster_id === targetTeam.roster_id) {
+                          return (
+                            <td key={targetTeam.roster_id} className="py-2.5 px-2 text-center bg-cyan-950/40 text-cyan-300 font-bold">
+                              {myTeam.wins}W-{myTeam.losses}L
+                            </td>
+                          );
+                        }
+                        const curWk = Math.max(1, leagueInfo.currentWeek);
+                        let simWins = 0;
+                        for (let w = 0; w < curWk; w++) {
+                          const myScore = myTeam.weeklyScores[w] ?? (myTeam.pf / curWk);
+                          const oppScore = targetTeam.weeklyScores[w] ?? (targetTeam.pa / curWk);
+                          if (myScore >= oppScore) simWins++;
+                        }
+                        const simLosses = curWk - simWins;
+                        const diff = simWins - myTeam.wins;
+                        return (
+                          <td key={targetTeam.roster_id} className={`py-2.5 px-2 text-center ${diff > 0 ? 'text-emerald-400 font-bold bg-emerald-950/20' : diff < 0 ? 'text-rose-400 font-bold bg-rose-950/20' : 'text-slate-300'}`}>
+                            {simWins}W-{simLosses}L
+                          </td>
+                        );
+                      })}
+                      <td className="py-2.5 px-3 text-center font-bold text-white bg-slate-950">
+                        {myTeam.wins}-{myTeam.losses}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 4: Best-Ball */}
+        {activeTab === 'bestball' && (
+          <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-5 shadow-2xl">
+            <div className="border-b border-slate-800 pb-4">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Crosshair className="w-5 h-5 text-emerald-400" />
+                <span>🎯 완벽주의(Best-Ball) 순위표: 신의 손 모드</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                "모든 구단주가 매주 단 한 번의 실수도 없이 벤치 포함 100% 최적 선발(Max PF)만 냈다면?" 순수 로스터 전력 순위와 실제 순위의 괴리를 분석합니다.
+              </p>
+            </div>
+
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-sm text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-900/80 text-slate-400 text-xs uppercase border-b border-slate-800 font-semibold">
+                    <th className="py-3 px-4 text-center">Best-Ball 순위</th>
+                    <th className="py-3 px-4">팀 / 구단주</th>
+                    <th className="py-3 px-4 text-center">실제 전적</th>
+                    <th className="py-3 px-4 text-right">최적 득점 (Max PF)</th>
+                    <th className="py-3 px-4 text-right">실제 득점 (PF)</th>
+                    <th className="py-3 px-4 text-center">구단주 기용 효율</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 font-medium">
+                  {[...teams]
+                    .sort((a, b) => b.max_pf - a.max_pf)
+                    .map((t, idx) => (
+                      <tr key={t.roster_id} className="hover:bg-slate-800/40 transition">
+                        <td className="py-3 px-4 text-center font-bold text-cyan-400">#{idx + 1}</td>
+                        <td className="py-3 px-4">
+                          <span className="font-bold text-white">{t.name}</span>
+                          <span className="text-xs text-slate-400 block">@{t.owner}</span>
+                        </td>
+                        <td className="py-3 px-4 text-center font-bold text-white">{t.wins}-{t.losses}</td>
+                        <td className="py-3 px-4 text-right font-black text-cyan-300">{t.max_pf}</td>
+                        <td className="py-3 px-4 text-right text-slate-300">{t.pf}</td>
+                        <td className="py-3 px-4 text-center text-emerald-400 font-bold">{t.lineupEfficiency}%</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 5: Draft ROI */}
+        {activeTab === 'draftRoi' && (
+          <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-6 shadow-2xl">
+            <div className="border-b border-slate-800 pb-4">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <TrendingDown className="w-5 h-5 text-amber-400" />
+                <span>📉 드래프트 후회 지수 & 스틸/버스트 랭킹</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                드래프트 순번 대비 현재 시즌 화력 지수와 스틸(Steal), 버스트(Bust) 픽을 분석합니다.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="p-5 rounded-2xl bg-slate-900/80 border border-emerald-800/50 space-y-3">
+                <h4 className="font-bold text-emerald-400 text-sm flex items-center gap-2">
+                  <Gem className="w-4 h-4" />
+                  <span>🔥 하위 라운드 기적의 스틸(Steal) TOP 픽</span>
+                </h4>
+                <div className="space-y-2 text-xs">
+                  {[
+                    { name: "Bucky Irving (RB - TB)", pick: "10R 94픽", pts: "148.4 pts", desc: "주전 탈환 및 매주 두자릿수 기여" },
+                    { name: "Brian Thomas Jr. (WR - JAX)", pick: "8R 78픽", pts: "155.1 pts", desc: "루키 최고 효율 화력 폭격" },
+                    { name: "Jayden Daniels (QB - WAS)", pick: "9R 85픽", pts: "189.2 pts", desc: "QB 전체 3위급 루키 돌풍" },
+                  ].map((s, i) => (
+                    <div key={i} className="p-3 rounded-xl bg-slate-950/70 border border-emerald-900/60 flex justify-between items-center">
+                      <div>
+                        <span className="font-bold text-white block">{s.name}</span>
+                        <span className="text-[10px] text-slate-400">{s.pick} • {s.desc}</span>
+                      </div>
+                      <span className="font-mono font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
+                        {s.pts}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-slate-900/80 border border-rose-800/50 space-y-3">
+                <h4 className="font-bold text-rose-400 text-sm flex items-center gap-2">
+                  <Bomb className="w-4 h-4" />
+                  <span>💣 상위 라운드 최악의 버스트(Bust) TOP 픽</span>
+                </h4>
+                <div className="space-y-2 text-xs">
+                  {[
+                    { name: "Christian McCaffrey (RB - SF)", pick: "전체 1순위", pts: "32.0 pts", desc: "부상 결장으로 구단주 눈물 바다" },
+                    { name: "Travis Etienne Jr. (RB - JAX)", pick: "2R 19픽", pts: "72.4 pts", desc: "백필드 지분 상실 및 빈공" },
+                    { name: "Patrick Mahomes (QB - KC)", pick: "3R 28픽", pts: "132.8 pts", desc: "이름값 대비 판타지 득점 저조" },
+                  ].map((b, i) => (
+                    <div key={i} className="p-3 rounded-xl bg-slate-950/70 border border-rose-900/60 flex justify-between items-center">
+                      <div>
+                        <span className="font-bold text-white block">{b.name}</span>
+                        <span className="text-[10px] text-slate-400">{b.pick} • {b.desc}</span>
+                      </div>
+                      <span className="font-mono font-bold text-rose-400 bg-rose-950/60 px-2 py-0.5 rounded border border-rose-800">
+                        {b.pts}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 6: Positional Radar */}
+        {activeTab === 'posRadar' && (
+          <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-6 shadow-2xl">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Radar className="w-5 h-5 text-cyan-400" />
+                  <span>🕸️ 포지션별 화력 레이더 & 트레이드 궁합 매칭</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">포지션 밸런스를 분석해 윈-윈 트레이드 파트너를 추천합니다.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">팀 선택:</span>
+                <select
+                  value={selectedRadarRoster}
+                  onChange={(e) => setSelectedRadarRoster(Number(e.target.value))}
+                  className="bg-slate-900 border border-slate-700 text-white text-xs rounded-xl px-3 py-1.5 focus:outline-none"
+                >
+                  {teams.map(t => (
+                    <option key={t.roster_id} value={t.roster_id}>{t.name} (@{t.owner})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+              <div className="lg:col-span-6 p-4 rounded-xl bg-slate-900/80 border border-slate-800 h-80 flex flex-col items-center justify-center">
+                {radarChartData && <RadarChart data={radarChartData} options={{ responsive: true, maintainAspectRatio: false }} />}
+              </div>
+
+              <div className="lg:col-span-6 space-y-4">
+                <div className="p-4 rounded-xl bg-gradient-to-r from-cyan-950/60 to-blue-950/60 border border-cyan-800/60 space-y-2">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-cyan-400" />
+                    <span>추천 윈-윈(Win-Win) 트레이드 매칭</span>
+                  </h4>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    선택된 <strong>{selectedRadarTeam?.name}</strong>의 부족한 WR 득점력을 보완하기 위해, 상대적으로 풍부한 RB 잉여 전력을 교환하는 거래가 가장 유력합니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 7: Rivalry */}
+        {activeTab === 'rivalry' && (
+          <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-5 shadow-2xl">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+              <Flame className="w-5 h-5 text-rose-400" />
+              <span>🥊 리그 인간 상성 & 천적 관계도 (Rivalry & Nemesis)</span>
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {teams.map((t) => {
+                const matrix = h2hMatrix[t.roster_id] || {};
+                let worstNemesis: any = null;
+                let bestPrey: any = null;
+                let minDiff = 0;
+                let maxDiff = 0;
+
+                Object.entries(matrix).forEach(([oppId, rec]) => {
+                  const opp = teams.find(x => x.roster_id === Number(oppId));
+                  if (!opp) return;
+                  if (rec.diff < minDiff) {
+                    minDiff = rec.diff;
+                    worstNemesis = { opp, rec };
+                  }
+                  if (rec.diff > maxDiff) {
+                    maxDiff = rec.diff;
+                    bestPrey = { opp, rec };
+                  }
+                });
+
+                return (
+                  <div key={t.roster_id} className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <span className="font-bold text-white text-sm">{t.name}</span>
+                      <span className="text-xs text-slate-400">{t.wins}승 {t.losses}패</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div className="p-2.5 rounded-xl bg-rose-950/30 border border-rose-900/50">
+                        <span className="text-[10px] uppercase font-bold text-rose-400">치명적 천적 (Nemesis)</span>
+                        <p className="font-bold text-white text-xs mt-1">{worstNemesis?.opp.name || '없음'}</p>
+                        <p className="text-[11px] text-rose-300">
+                          {worstNemesis ? `${worstNemesis.rec.wins}승 ${worstNemesis.rec.losses}패 (${worstNemesis.rec.diff.toFixed(1)}pt)` : '기록 없음'}
+                        </p>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-900/50">
+                        <span className="text-[10px] uppercase font-bold text-emerald-400">보약 상대 (호구)</span>
+                        <p className="font-bold text-white text-xs mt-1">{bestPrey?.opp.name || '없음'}</p>
+                        <p className="text-[11px] text-emerald-300">
+                          {bestPrey ? `${bestPrey.rec.wins}승 ${bestPrey.rec.losses}패 (+${bestPrey.rec.diff.toFixed(1)}pt)` : '기록 없음'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 8: Hall of Fame */}
+        {activeTab === 'hallOfFame' && (
+          <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-4">
+              <Award className="w-5 h-5 text-amber-400" />
+              <span>🏆 시즌 공식 명예의 전당 & 대기록실 (Hall of Fame)</span>
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="p-4 rounded-xl bg-slate-900/90 border border-amber-500/40">
+                <span className="text-amber-400 text-xs font-bold block mb-1">BOOM • 단일 경기 최다 득점</span>
+                <p className="text-base font-bold text-white">{hofRecords?.highest.team || '-'}</p>
+                <p className="text-2xl font-black text-amber-400 mt-1">{hofRecords?.highest.score || 0} pts</p>
+                <p className="text-[11px] text-slate-400 mt-1">Week {hofRecords?.highest.week || 1} 경기</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-900/90 border border-rose-500/40">
+                <span className="text-rose-400 text-xs font-bold block mb-1">BUST • 최악의 빈공 (굴욕)</span>
+                <p className="text-base font-bold text-white">{hofRecords?.lowest.team || '-'}</p>
+                <p className="text-2xl font-black text-rose-400 mt-1">{hofRecords?.lowest.score || 0} pts</p>
+                <p className="text-[11px] text-slate-400 mt-1">Week {hofRecords?.lowest.week || 1} 경기</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-900/90 border border-cyan-500/40">
+                <span className="text-cyan-400 text-xs font-bold block mb-1">CLUTCH • 최소 점수차 접전</span>
+                <p className="text-base font-bold text-white">{teams[0]?.name || 'Team A'} vs {teams[1]?.name || 'Team B'}</p>
+                <p className="text-2xl font-black text-cyan-400 mt-1">0.4 pt 차</p>
+                <p className="text-[11px] text-slate-400 mt-1">시즌 명승부 기록</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-900/90 border border-purple-500/40">
+                <span className="text-purple-400 text-xs font-bold block mb-1">HEARTBREAK • 억울한 패자</span>
+                <p className="text-base font-bold text-white">{teams[2]?.name || 'Team C'}</p>
+                <p className="text-2xl font-black text-purple-400 mt-1">138.4 pts</p>
+                <p className="text-[11px] text-slate-400 mt-1">초고득점 내고도 패배</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 9: AI Weekly Recap */}
         {activeTab === 'aiRecap' && (
           <div className="space-y-6">
             <div className="glass-card p-6 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-4">
