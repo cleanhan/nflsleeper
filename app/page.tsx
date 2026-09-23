@@ -644,10 +644,11 @@ export default function DashboardPage() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {matchups.map((m, idx) => {
+                  const teamB = m.teamB;
                   const teamAObj = teams.find(t => t.roster_id === m.teamA.roster_id);
-                  const teamBObj = m.teamB ? teams.find(t => t.roster_id === m.teamB.roster_id) : null;
-                  const aWon = teamBObj ? m.teamA.score > m.teamB.score : true;
-                  const diff = teamBObj ? Math.abs(m.teamA.score - m.teamB.score).toFixed(1) : '0.0';
+                  const teamBObj = teamB ? teams.find(t => t.roster_id === teamB.roster_id) : null;
+                  const aWon = teamB ? m.teamA.score > teamB.score : true;
+                  const diff = teamB ? Math.abs(m.teamA.score - teamB.score).toFixed(1) : '0.0';
 
                   return (
                     <div key={idx} className="glass-card rounded-2xl border border-slate-800 p-5 space-y-4 shadow-lg hover:border-slate-700 transition">
@@ -668,12 +669,12 @@ export default function DashboardPage() {
                           <p className="text-[11px] text-slate-400">최적: {m.teamA.optimal} (벤치 {m.teamA.bench_score}점)</p>
                         </div>
 
-                        {teamBObj ? (
+                        {teamB ? (
                           <div className="text-right border-l border-slate-800 pl-4">
-                            <p className="font-bold text-sm text-white truncate">{teamBObj?.name}</p>
+                            <p className="font-bold text-sm text-white truncate">{teamBObj?.name || `Team ${teamB.roster_id}`}</p>
                             <p className="text-[11px] text-slate-400 truncate">@{teamBObj?.owner || ''}</p>
-                            <p className={`text-2xl font-black mt-1 ${!aWon ? 'text-cyan-400' : 'text-slate-400'}`}>{m.teamB!.score}</p>
-                            <p className="text-[11px] text-slate-400">최적: {m.teamB!.optimal} (벤치 {m.teamB!.bench_score}점)</p>
+                            <p className={`text-2xl font-black mt-1 ${!aWon ? 'text-cyan-400' : 'text-slate-400'}`}>{teamB.score}</p>
+                            <p className="text-[11px] text-slate-400">최적: {teamB.optimal} (벤치 {teamB.bench_score}점)</p>
                           </div>
                         ) : (
                           <div className="text-slate-500 text-xs text-center">부전승(BYE)</div>
@@ -695,13 +696,13 @@ export default function DashboardPage() {
                           </div>
                         </div>
 
-                        {teamBObj && (
+                        {teamB && (
                           <div className="border-l border-slate-800/80 pl-3">
                             <p className="font-semibold text-slate-300 mb-1 flex items-center gap-1">
                               <Trophy className="w-3 h-3 text-cyan-400" /> 주요 선발
                             </p>
                             <div className="space-y-1">
-                              {m.teamB!.players.slice(0, 3).map(p => (
+                              {teamB.players.slice(0, 3).map(p => (
                                 <div key={p.id} className="flex justify-between items-center bg-slate-950/60 px-2 py-1 rounded border border-slate-800/60">
                                   <span className="truncate text-slate-300 max-w-[110px]">{p.name}</span>
                                   <span className="font-mono font-bold text-cyan-300">{p.pts}</span>
